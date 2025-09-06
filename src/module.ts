@@ -256,6 +256,30 @@ export default defineNuxtModule<GqlConfig>({
       nitro.externals.inline = nitro.externals.inline || []
       nitro.externals.inline.push(resolver.resolve('runtime'))
 
+      let clientSdksCode: string
+
+      if (ctx.codegen) {
+        // When codegen is enabled, import the generated SDK
+        const clientImports = Object.keys(ctx.clientDocs || {}).map(client =>
+          `import { getSdk as ${client}Sdk } from '#gql/${client}'`
+        ).join('\n')
+
+        const clientSdkEntries = Object.keys(ctx.clientDocs || {}).map(client =>
+          `${client}: ${client}Sdk`
+        ).join(',\n  ')
+
+        clientSdksCode = `${clientImports}\n\nconst clientSdks = {\n  ${clientSdkEntries}\n}`
+      }
+      else {
+        // When codegen is disabled, use mockTemplate as before
+        const clientSdks = Object.entries(ctx.clientDocs || {}).reduce<string[]>((acc, [client, docs]) => {
+          const entries = extractGqlOperations(docs)
+          return [...acc, `${client}: ` + mockTemplate(entries).replace('export ', '')]
+        }, [])
+
+        clientSdksCode = 'const clientSdks = {' + clientSdks + '}'
+      }
+
       const clientSdks = Object.entries(ctx.clientDocs || {}).reduce<string[]>((acc, [client, docs]) => {
         const entries = extractGqlOperations(docs)
 
@@ -264,7 +288,7 @@ export default defineNuxtModule<GqlConfig>({
 
       nitro.virtual = nitro.virtual || {}
       nitro.virtual['#gql-nitro'] = [
-        'const clientSdks = {' + clientSdks + '}',
+        clientSdksCode,
         'const config = ' + JSON.stringify(config.clients),
         'const ops = ' + JSON.stringify(ctx.clientOps),
         'const clients = {}',
